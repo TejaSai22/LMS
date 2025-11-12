@@ -5,10 +5,10 @@
 -- Insert Users
 -- Password for all users is 'password' (hashed)
 INSERT INTO "User" (FirstName, LastName, Email, PasswordHash, Role) VALUES
-('Admin', 'User', 'admin@lms.com', '$2b$10$E.qg4/2iG5.W2j.xS9a1Z.F9b7a4s5d6e7f8g9h0i', 'Admin'),
-('John', 'Doe', 'john.doe@example.com', '$2b$10$E.qg4/2iG5.W2j.xS9a1Z.F9b7a4s5d6e7f8g9h0i', 'Student'),
-('Jane', 'Smith', 'jane.smith@example.com', '$2b$10$E.qg4/2iG5.W2j.xS9a1Z.F9b7a4s5d6e7f8g9h0i', 'Student'),
-('Peter', 'Jones', 'peter.jones@example.com', '$2b$10$E.qg4/2iG5.W2j.xS9a1Z.F9b7a4s5d6e7f8g9h0i', 'Instructor');
+('Admin', 'User', 'admin@lms.com', '$2b$10$MqxcwXvQi3Jv1OR3DiV/9ezWIhFGRk1HBndtFbpZbkwG6mIbvZ12e', 'Admin'),
+('John', 'Doe', 'john.doe@example.com', '$2b$10$MqxcwXvQi3Jv1OR3DiV/9ezWIhFGRk1HBndtFbpZbkwG6mIbvZ12e', 'Student'),
+('Jane', 'Smith', 'jane.smith@example.com', '$2b$10$MqxcwXvQi3Jv1OR3DiV/9ezWIhFGRk1HBndtFbpZbkwG6mIbvZ12e', 'Student'),
+('Peter', 'Jones', 'peter.jones@example.com', '$2b$10$MqxcwXvQi3Jv1OR3DiV/9ezWIhFGRk1HBndtFbpZbkwG6mIbvZ12e', 'Instructor');
 
 -- Insert Terms
 INSERT INTO Term (TermName, TermType, StartDate, EndDate) VALUES
