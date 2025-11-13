@@ -60,7 +60,7 @@ app.get('/', (req, res) => {
   res.send('Hello, World!');
 });
 
-// API endpoint to get all courses
+// --- Course Endpoints ---
 app.get('/api/courses', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM Course');
@@ -71,7 +71,6 @@ app.get('/api/courses', async (req, res) => {
   }
 });
 
-// API endpoint to get a single course by ID
 app.get('/api/courses/:courseId', async (req, res) => {
   try {
     const { courseId } = req.params;
@@ -86,21 +85,14 @@ app.get('/api/courses/:courseId', async (req, res) => {
   }
 });
 
-// API endpoint to create an assignment for a course offering
+// --- Assignment Endpoints ---
 app.post('/api/courses/:courseOfferingId/assignments', authorize('Instructor'), async (req, res) => {
   try {
     const { courseOfferingId } = req.params;
     const { Title, Description, MaxPoints, DueDate, WeightPercentage } = req.body;
-
-    // Verify that the instructor is teaching this course
     const offeringResult = await pool.query('SELECT InstructorID FROM CourseOffering WHERE OfferingID = $1', [courseOfferingId]);
-    if (offeringResult.rows.length === 0) {
-      return res.status(404).send('Course offering not found');
-    }
-    if (offeringResult.rows[0].instructorid !== req.user.userId) {
-      return res.status(403).send('You are not authorized to add assignments to this course');
-    }
-
+    if (offeringResult.rows.length === 0) return res.status(404).send('Course offering not found');
+    if (offeringResult.rows[0].instructorid !== req.user.userId) return res.status(403).send('You are not authorized to add assignments to this course');
     const { rows } = await pool.query(
       'INSERT INTO Assignment (OfferingID, Title, Description, MaxPoints, DueDate, WeightPercentage) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
       [courseOfferingId, Title, Description, MaxPoints, DueDate, WeightPercentage]
@@ -112,25 +104,15 @@ app.post('/api/courses/:courseOfferingId/assignments', authorize('Instructor'), 
   }
 });
 
-// API endpoint to get all assignments for a course offering
 app.get('/api/courses/:courseOfferingId/assignments', authorize(), async (req, res) => {
   try {
     const { courseOfferingId } = req.params;
-
-    // Verify that the user is either the instructor or enrolled in the course
     const offeringResult = await pool.query('SELECT InstructorID FROM CourseOffering WHERE OfferingID = $1', [courseOfferingId]);
-    if (offeringResult.rows.length === 0) {
-      return res.status(404).send('Course offering not found');
-    }
+    if (offeringResult.rows.length === 0) return res.status(404).send('Course offering not found');
     const isInstructor = offeringResult.rows[0].instructorid === req.user.userId;
-
     const enrollmentResult = await pool.query('SELECT * FROM Enrollment WHERE OfferingID = $1 AND StudentID = $2', [courseOfferingId, req.user.userId]);
     const isEnrolled = enrollmentResult.rows.length > 0;
-
-    if (!isInstructor && !isEnrolled) {
-      return res.status(403).send('You are not authorized to view assignments for this course');
-    }
-
+    if (!isInstructor && !isEnrolled) return res.status(403).send('You are not authorized to view assignments for this course');
     const { rows } = await pool.query('SELECT * FROM Assignment WHERE OfferingID = $1', [courseOfferingId]);
     res.json(rows);
   } catch (err) {
@@ -139,27 +121,17 @@ app.get('/api/courses/:courseOfferingId/assignments', authorize(), async (req, r
   }
 });
 
-// API endpoint to get a single assignment by ID
 app.get('/api/assignments/:assignmentId', authorize(), async (req, res) => {
   try {
     const { assignmentId } = req.params;
     const assignmentResult = await pool.query('SELECT * FROM Assignment WHERE AssignmentID = $1', [assignmentId]);
-    if (assignmentResult.rows.length === 0) {
-      return res.status(404).send('Assignment not found');
-    }
+    if (assignmentResult.rows.length === 0) return res.status(404).send('Assignment not found');
     const assignment = assignmentResult.rows[0];
-
-    // Verify that the user is either the instructor or enrolled in the course
     const offeringResult = await pool.query('SELECT InstructorID FROM CourseOffering WHERE OfferingID = $1', [assignment.offeringid]);
     const isInstructor = offeringResult.rows[0].instructorid === req.user.userId;
-
     const enrollmentResult = await pool.query('SELECT * FROM Enrollment WHERE OfferingID = $1 AND StudentID = $2', [assignment.offeringid, req.user.userId]);
     const isEnrolled = enrollmentResult.rows.length > 0;
-
-    if (!isInstructor && !isEnrolled) {
-      return res.status(403).send('You are not authorized to view this assignment');
-    }
-
+    if (!isInstructor && !isEnrolled) return res.status(403).send('You are not authorized to view this assignment');
     res.json(assignment);
   } catch (err) {
     console.error(err.stack);
@@ -167,24 +139,15 @@ app.get('/api/assignments/:assignmentId', authorize(), async (req, res) => {
   }
 });
 
-// API endpoint to update an assignment
 app.put('/api/assignments/:assignmentId', authorize('Instructor'), async (req, res) => {
   try {
     const { assignmentId } = req.params;
     const { Title, Description, MaxPoints, DueDate, WeightPercentage } = req.body;
-
-    // Verify that the instructor is teaching the course for this assignment
     const assignmentResult = await pool.query('SELECT OfferingID FROM Assignment WHERE AssignmentID = $1', [assignmentId]);
-    if (assignmentResult.rows.length === 0) {
-      return res.status(404).send('Assignment not found');
-    }
+    if (assignmentResult.rows.length === 0) return res.status(404).send('Assignment not found');
     const offeringId = assignmentResult.rows[0].offeringid;
-
     const offeringResult = await pool.query('SELECT InstructorID FROM CourseOffering WHERE OfferingID = $1', [offeringId]);
-    if (offeringResult.rows[0].instructorid !== req.user.userId) {
-      return res.status(403).send('You are not authorized to update assignments for this course');
-    }
-
+    if (offeringResult.rows[0].instructorid !== req.user.userId) return res.status(403).send('You are not authorized to update assignments for this course');
     const { rows } = await pool.query(
       'UPDATE Assignment SET Title = $1, Description = $2, MaxPoints = $3, DueDate = $4, WeightPercentage = $5 WHERE AssignmentID = $6 RETURNING *',
       [Title, Description, MaxPoints, DueDate, WeightPercentage, assignmentId]
@@ -196,23 +159,14 @@ app.put('/api/assignments/:assignmentId', authorize('Instructor'), async (req, r
   }
 });
 
-// API endpoint to delete an assignment
 app.delete('/api/assignments/:assignmentId', authorize('Instructor'), async (req, res) => {
   try {
     const { assignmentId } = req.params;
-
-    // Verify that the instructor is teaching the course for this assignment
     const assignmentResult = await pool.query('SELECT OfferingID FROM Assignment WHERE AssignmentID = $1', [assignmentId]);
-    if (assignmentResult.rows.length === 0) {
-      return res.status(404).send('Assignment not found');
-    }
+    if (assignmentResult.rows.length === 0) return res.status(404).send('Assignment not found');
     const offeringId = assignmentResult.rows[0].offeringid;
-
     const offeringResult = await pool.query('SELECT InstructorID FROM CourseOffering WHERE OfferingID = $1', [offeringId]);
-    if (offeringResult.rows[0].instructorid !== req.user.userId) {
-      return res.status(403).send('You are not authorized to delete assignments for this course');
-    }
-
+    if (offeringResult.rows[0].instructorid !== req.user.userId) return res.status(403).send('You are not authorized to delete assignments for this course');
     await pool.query('DELETE FROM Assignment WHERE AssignmentID = $1', [assignmentId]);
     res.sendStatus(204);
   } catch (err) {
@@ -221,21 +175,65 @@ app.delete('/api/assignments/:assignmentId', authorize('Instructor'), async (req
   }
 });
 
-// API endpoint to create a quiz for a course offering
+// --- Submission Endpoints ---
+app.post('/api/assignments/:assignmentId/submissions', authorize('Student'), async (req, res) => {
+  try {
+    const { assignmentId } = req.params;
+    const studentId = req.user.userId;
+    const { FileURL, SubmissionText } = req.body;
+    const assignmentResult = await pool.query('SELECT OfferingID, DueDate FROM Assignment WHERE AssignmentID = $1', [assignmentId]);
+    if (assignmentResult.rows.length === 0) return res.status(404).send('Assignment not found');
+    const { offeringid, duedate } = assignmentResult.rows[0];
+    const enrollmentResult = await pool.query('SELECT * FROM Enrollment WHERE OfferingID = $1 AND StudentID = $2', [offeringid, studentId]);
+    if (enrollmentResult.rows.length === 0) return res.status(403).send('You are not enrolled in the course for this assignment');
+    const isLate = new Date() > new Date(duedate);
+    const versionResult = await pool.query('SELECT MAX(VersionNumber) as max_version FROM Submission WHERE AssignmentID = $1 AND StudentID = $2', [assignmentId, studentId]);
+    const nextVersion = (versionResult.rows[0].max_version || 0) + 1;
+    const { rows } = await pool.query(
+      'INSERT INTO Submission (AssignmentID, StudentID, FileURL, SubmissionText, IsLate, VersionNumber) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [assignmentId, studentId, FileURL, SubmissionText, isLate, nextVersion]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error(err.stack);
+    res.status(500).send('Error creating submission');
+  }
+});
+
+app.get('/api/assignments/:assignmentId/submissions', authorize(), async (req, res) => {
+  try {
+    const { assignmentId } = req.params;
+    const { userId, role } = req.user;
+    const assignmentResult = await pool.query('SELECT OfferingID FROM Assignment WHERE AssignmentID = $1', [assignmentId]);
+    if (assignmentResult.rows.length === 0) return res.status(404).send('Assignment not found');
+    const { offeringid } = assignmentResult.rows[0];
+    const offeringResult = await pool.query('SELECT InstructorID FROM CourseOffering WHERE OfferingID = $1', [offeringid]);
+    const isInstructor = offeringResult.rows[0].instructorid === userId;
+    if (role === 'Instructor' && isInstructor) {
+      const { rows } = await pool.query('SELECT * FROM Submission WHERE AssignmentID = $1', [assignmentId]);
+      return res.json(rows);
+    }
+    if (role === 'Student') {
+      const enrollmentResult = await pool.query('SELECT * FROM Enrollment WHERE OfferingID = $1 AND StudentID = $2', [offeringid, userId]);
+      if (enrollmentResult.rows.length === 0) return res.status(403).send('You are not authorized to view submissions for this assignment');
+      const { rows } = await pool.query('SELECT * FROM Submission WHERE AssignmentID = $1 AND StudentID = $2', [assignmentId, userId]);
+      return res.json(rows);
+    }
+    return res.status(403).send('You are not authorized to view submissions for this assignment');
+  } catch (err) {
+    console.error(err.stack);
+    res.status(500).send('Error fetching submissions');
+  }
+});
+
+// --- Quiz Endpoints ---
 app.post('/api/courses/:courseOfferingId/quizzes', authorize('Instructor'), async (req, res) => {
   try {
     const { courseOfferingId } = req.params;
     const { Title, Description, MaxPoints, DueDate, TimeLimit, WeightPercentage } = req.body;
-
-    // Verify that the instructor is teaching this course
     const offeringResult = await pool.query('SELECT InstructorID FROM CourseOffering WHERE OfferingID = $1', [courseOfferingId]);
-    if (offeringResult.rows.length === 0) {
-      return res.status(404).send('Course offering not found');
-    }
-    if (offeringResult.rows[0].instructorid !== req.user.userId) {
-      return res.status(403).send('You are not authorized to add quizzes to this course');
-    }
-
+    if (offeringResult.rows.length === 0) return res.status(404).send('Course offering not found');
+    if (offeringResult.rows[0].instructorid !== req.user.userId) return res.status(403).send('You are not authorized to add quizzes to this course');
     const { rows } = await pool.query(
       'INSERT INTO Quiz (OfferingID, Title, Description, MaxPoints, DueDate, TimeLimit, WeightPercentage) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
       [courseOfferingId, Title, Description, MaxPoints, DueDate, TimeLimit, WeightPercentage]
@@ -247,25 +245,15 @@ app.post('/api/courses/:courseOfferingId/quizzes', authorize('Instructor'), asyn
   }
 });
 
-// API endpoint to get all quizzes for a course offering
 app.get('/api/courses/:courseOfferingId/quizzes', authorize(), async (req, res) => {
   try {
     const { courseOfferingId } = req.params;
-
-    // Verify that the user is either the instructor or enrolled in the course
     const offeringResult = await pool.query('SELECT InstructorID FROM CourseOffering WHERE OfferingID = $1', [courseOfferingId]);
-    if (offeringResult.rows.length === 0) {
-      return res.status(404).send('Course offering not found');
-    }
+    if (offeringResult.rows.length === 0) return res.status(404).send('Course offering not found');
     const isInstructor = offeringResult.rows[0].instructorid === req.user.userId;
-
     const enrollmentResult = await pool.query('SELECT * FROM Enrollment WHERE OfferingID = $1 AND StudentID = $2', [courseOfferingId, req.user.userId]);
     const isEnrolled = enrollmentResult.rows.length > 0;
-
-    if (!isInstructor && !isEnrolled) {
-      return res.status(403).send('You are not authorized to view quizzes for this course');
-    }
-
+    if (!isInstructor && !isEnrolled) return res.status(403).send('You are not authorized to view quizzes for this course');
     const { rows } = await pool.query('SELECT * FROM Quiz WHERE OfferingID = $1', [courseOfferingId]);
     res.json(rows);
   } catch (err) {
@@ -274,27 +262,17 @@ app.get('/api/courses/:courseOfferingId/quizzes', authorize(), async (req, res) 
   }
 });
 
-// API endpoint to get a single quiz by ID
 app.get('/api/quizzes/:quizId', authorize(), async (req, res) => {
   try {
     const { quizId } = req.params;
     const quizResult = await pool.query('SELECT * FROM Quiz WHERE QuizID = $1', [quizId]);
-    if (quizResult.rows.length === 0) {
-      return res.status(404).send('Quiz not found');
-    }
+    if (quizResult.rows.length === 0) return res.status(404).send('Quiz not found');
     const quiz = quizResult.rows[0];
-
-    // Verify that the user is either the instructor or enrolled in the course
     const offeringResult = await pool.query('SELECT InstructorID FROM CourseOffering WHERE OfferingID = $1', [quiz.offeringid]);
     const isInstructor = offeringResult.rows[0].instructorid === req.user.userId;
-
     const enrollmentResult = await pool.query('SELECT * FROM Enrollment WHERE OfferingID = $1 AND StudentID = $2', [quiz.offeringid, req.user.userId]);
     const isEnrolled = enrollmentResult.rows.length > 0;
-
-    if (!isInstructor && !isEnrolled) {
-      return res.status(403).send('You are not authorized to view this quiz');
-    }
-
+    if (!isInstructor && !isEnrolled) return res.status(403).send('You are not authorized to view this quiz');
     res.json(quiz);
   } catch (err) {
     console.error(err.stack);
@@ -302,24 +280,15 @@ app.get('/api/quizzes/:quizId', authorize(), async (req, res) => {
   }
 });
 
-// API endpoint to update a quiz
 app.put('/api/quizzes/:quizId', authorize('Instructor'), async (req, res) => {
   try {
     const { quizId } = req.params;
     const { Title, Description, MaxPoints, DueDate, TimeLimit, WeightPercentage } = req.body;
-
-    // Verify that the instructor is teaching the course for this quiz
     const quizResult = await pool.query('SELECT OfferingID FROM Quiz WHERE QuizID = $1', [quizId]);
-    if (quizResult.rows.length === 0) {
-      return res.status(404).send('Quiz not found');
-    }
+    if (quizResult.rows.length === 0) return res.status(404).send('Quiz not found');
     const offeringId = quizResult.rows[0].offeringid;
-
     const offeringResult = await pool.query('SELECT InstructorID FROM CourseOffering WHERE OfferingID = $1', [offeringId]);
-    if (offeringResult.rows[0].instructorid !== req.user.userId) {
-      return res.status(403).send('You are not authorized to update quizzes for this course');
-    }
-
+    if (offeringResult.rows[0].instructorid !== req.user.userId) return res.status(403).send('You are not authorized to update quizzes for this course');
     const { rows } = await pool.query(
       'UPDATE Quiz SET Title = $1, Description = $2, MaxPoints = $3, DueDate = $4, TimeLimit = $5, WeightPercentage = $6 WHERE QuizID = $7 RETURNING *',
       [Title, Description, MaxPoints, DueDate, TimeLimit, WeightPercentage, quizId]
@@ -331,23 +300,14 @@ app.put('/api/quizzes/:quizId', authorize('Instructor'), async (req, res) => {
   }
 });
 
-// API endpoint to delete a quiz
 app.delete('/api/quizzes/:quizId', authorize('Instructor'), async (req, res) => {
   try {
     const { quizId } = req.params;
-
-    // Verify that the instructor is teaching the course for this quiz
     const quizResult = await pool.query('SELECT OfferingID FROM Quiz WHERE QuizID = $1', [quizId]);
-    if (quizResult.rows.length === 0) {
-      return res.status(404).send('Quiz not found');
-    }
+    if (quizResult.rows.length === 0) return res.status(404).send('Quiz not found');
     const offeringId = quizResult.rows[0].offeringid;
-
     const offeringResult = await pool.query('SELECT InstructorID FROM CourseOffering WHERE OfferingID = $1', [offeringId]);
-    if (offeringResult.rows[0].instructorid !== req.user.userId) {
-      return res.status(403).send('You are not authorized to delete quizzes for this course');
-    }
-
+    if (offeringResult.rows[0].instructorid !== req.user.userId) return res.status(403).send('You are not authorized to delete quizzes for this course');
     await pool.query('DELETE FROM Quiz WHERE QuizID = $1', [quizId]);
     res.sendStatus(204);
   } catch (err) {
@@ -356,8 +316,77 @@ app.delete('/api/quizzes/:quizId', authorize('Instructor'), async (req, res) => 
   }
 });
 
+// --- Quiz Attempt Endpoints ---
+app.post('/api/quizzes/:quizId/attempts', authorize('Student'), async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const studentId = req.user.userId;
+    const quizResult = await pool.query('SELECT OfferingID, NumberOfAttempts FROM Quiz WHERE QuizID = $1', [quizId]);
+    if (quizResult.rows.length === 0) return res.status(404).send('Quiz not found');
+    const { offeringid, numberofattempts } = quizResult.rows[0];
+    const enrollmentResult = await pool.query('SELECT * FROM Enrollment WHERE OfferingID = $1 AND StudentID = $2', [offeringid, studentId]);
+    if (enrollmentResult.rows.length === 0) return res.status(403).send('You are not enrolled in the course for this quiz');
+    const attemptResult = await pool.query('SELECT COUNT(*) as attempt_count FROM QuizAttempt WHERE QuizID = $1 AND StudentID = $2', [quizId, studentId]);
+    if (attemptResult.rows[0].attempt_count >= numberofattempts) return res.status(403).send('You have exceeded the maximum number of attempts for this quiz');
+    const nextAttemptNumber = parseInt(attemptResult.rows[0].attempt_count) + 1;
+    const { rows } = await pool.query(
+      'INSERT INTO QuizAttempt (QuizID, StudentID, AttemptNumber, StartTime) VALUES ($1, $2, $3, NOW()) RETURNING *',
+      [quizId, studentId, nextAttemptNumber]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error(err.stack);
+    res.status(500).send('Error starting quiz attempt');
+  }
+});
 
-// API endpoint to get all users
+app.post('/api/attempts/:attemptId', authorize('Student'), async (req, res) => {
+  try {
+    const { attemptId } = req.params;
+    const { responses } = req.body;
+    const attemptResult = await pool.query('SELECT * FROM QuizAttempt WHERE AttemptID = $1', [attemptId]);
+    if (attemptResult.rows.length === 0) return res.status(404).send('Quiz attempt not found');
+    const attempt = attemptResult.rows[0];
+    if (attempt.studentid !== req.user.userId) return res.status(403).send('You are not authorized to submit this quiz attempt');
+    if (attempt.submittime) return res.status(400).send('This quiz has already been submitted');
+    const { rows } = await pool.query(
+      'UPDATE QuizAttempt SET SubmitTime = NOW(), ResponsesJSON = $1, IsCompleted = TRUE WHERE AttemptID = $2 RETURNING *',
+      [responses, attemptId]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err.stack);
+    res.status(500).send('Error submitting quiz attempt');
+  }
+});
+
+app.get('/api/quizzes/:quizId/attempts', authorize(), async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const { userId, role } = req.user;
+    const quizResult = await pool.query('SELECT OfferingID FROM Quiz WHERE QuizID = $1', [quizId]);
+    if (quizResult.rows.length === 0) return res.status(404).send('Quiz not found');
+    const { offeringid } = quizResult.rows[0];
+    const offeringResult = await pool.query('SELECT InstructorID FROM CourseOffering WHERE OfferingID = $1', [offeringid]);
+    const isInstructor = offeringResult.rows[0].instructorid === userId;
+    if (role === 'Instructor' && isInstructor) {
+      const { rows } = await pool.query('SELECT * FROM QuizAttempt WHERE QuizID = $1', [quizId]);
+      return res.json(rows);
+    }
+    if (role === 'Student') {
+      const enrollmentResult = await pool.query('SELECT * FROM Enrollment WHERE OfferingID = $1 AND StudentID = $2', [offeringid, userId]);
+      if (enrollmentResult.rows.length === 0) return res.status(403).send('You are not authorized to view attempts for this quiz');
+      const { rows } = await pool.query('SELECT * FROM QuizAttempt WHERE QuizID = $1 AND StudentID = $2', [quizId, userId]);
+      return res.json(rows);
+    }
+    return res.status(403).send('You are not authorized to view attempts for this quiz');
+  } catch (err) {
+    console.error(err.stack);
+    res.status(500).send('Error fetching quiz attempts');
+  }
+});
+
+// --- User & Auth Endpoints ---
 app.get('/api/users', authorize('Admin'), async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT UserID, FirstName, LastName, Email, Role, DateCreated, LastLogin, IsActive FROM "User"');
@@ -368,14 +397,10 @@ app.get('/api/users', authorize('Admin'), async (req, res) => {
   }
 });
 
-// API endpoint to get all courses a user is enrolled in
 app.get('/api/users/:userId/courses', authorize(), async (req, res) => {
   try {
     const { userId } = req.params;
-    // Ensure the authenticated user can only access their own courses
-    if (req.user.userId !== parseInt(userId) && req.user.role !== 'Admin') {
-      return res.sendStatus(403);
-    }
+    if (req.user.userId !== parseInt(userId) && req.user.role !== 'Admin') return res.sendStatus(403);
     const query = `
       SELECT c.*
       FROM Course c
@@ -391,7 +416,6 @@ app.get('/api/users/:userId/courses', authorize(), async (req, res) => {
   }
 });
 
-// API endpoint to create a new user
 app.post('/api/users', async (req, res) => {
   try {
     const { FirstName, LastName, Email, Password, Role } = req.body;
@@ -408,7 +432,6 @@ app.post('/api/users', async (req, res) => {
   }
 });
 
-// API endpoint to enroll a student in a course
 app.post('/api/enrollments', authorize(['Admin', 'Instructor']), async (req, res) => {
   try {
     const { StudentID, OfferingID } = req.body;
@@ -423,19 +446,14 @@ app.post('/api/enrollments', authorize(['Admin', 'Instructor']), async (req, res
   }
 });
 
-// API endpoint for user login
 app.post('/api/login', async (req, res) => {
   try {
     const { Email, Password } = req.body;
     const { rows } = await pool.query('SELECT * FROM "User" WHERE Email = $1', [Email]);
-    if (rows.length === 0) {
-      return res.status(400).send('Invalid email or password');
-    }
+    if (rows.length === 0) return res.status(400).send('Invalid email or password');
     const user = rows[0];
     const validPassword = await bcrypt.compare(Password, user.passwordhash);
-    if (!validPassword) {
-      return res.status(400).send('Invalid email or password');
-    }
+    if (!validPassword) return res.status(400).send('Invalid email or password');
     const token = jwt.sign({ userId: user.userid, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
     res.json({ token });
   } catch (err) {
