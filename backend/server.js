@@ -226,6 +226,26 @@ app.get('/api/assignments/:assignmentId/submissions', authorize(), async (req, r
   }
 });
 
+app.patch('/api/submissions/:submissionId', authorize('Instructor'), async (req, res) => {
+  try {
+    const { submissionId } = req.params;
+    const { Score, Feedback } = req.body;
+    const submissionResult = await pool.query('SELECT s.AssignmentID, a.OfferingID FROM Submission s JOIN Assignment a ON s.AssignmentID = a.AssignmentID WHERE s.SubmissionID = $1', [submissionId]);
+    if (submissionResult.rows.length === 0) return res.status(404).send('Submission not found');
+    const { offeringid } = submissionResult.rows[0];
+    const offeringResult = await pool.query('SELECT InstructorID FROM CourseOffering WHERE OfferingID = $1', [offeringid]);
+    if (offeringResult.rows[0].instructorid !== req.user.userId) return res.status(403).send('You are not authorized to grade submissions for this course');
+    const { rows } = await pool.query(
+      'UPDATE Submission SET Score = $1, Feedback = $2, GradedDate = NOW(), GradedByID = $3 WHERE SubmissionID = $4 RETURNING *',
+      [Score, Feedback, req.user.userId, submissionId]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err.stack);
+    res.status(500).send('Error grading submission');
+  }
+});
+
 // --- Quiz Endpoints ---
 app.post('/api/courses/:courseOfferingId/quizzes', authorize('Instructor'), async (req, res) => {
   try {
@@ -340,7 +360,7 @@ app.post('/api/quizzes/:quizId/attempts', authorize('Student'), async (req, res)
   }
 });
 
-app.post('/api/attempts/:attemptId', authorize('Student'), async (req, res) => {
+app.patch('/api/attempts/:attemptId', authorize('Student'), async (req, res) => {
   try {
     const { attemptId } = req.params;
     const { responses } = req.body;
@@ -383,6 +403,26 @@ app.get('/api/quizzes/:quizId/attempts', authorize(), async (req, res) => {
   } catch (err) {
     console.error(err.stack);
     res.status(500).send('Error fetching quiz attempts');
+  }
+});
+
+app.patch('/api/attempts/:attemptId/grade', authorize('Instructor'), async (req, res) => {
+  try {
+    const { attemptId } = req.params;
+    const { Score } = req.body;
+    const attemptResult = await pool.query('SELECT qa.QuizID, q.OfferingID FROM QuizAttempt qa JOIN Quiz q ON qa.QuizID = q.QuizID WHERE qa.AttemptID = $1', [attemptId]);
+    if (attemptResult.rows.length === 0) return res.status(404).send('Quiz attempt not found');
+    const { offeringid } = attemptResult.rows[0];
+    const offeringResult = await pool.query('SELECT InstructorID FROM CourseOffering WHERE OfferingID = $1', [offeringid]);
+    if (offeringResult.rows[0].instructorid !== req.user.userId) return res.status(403).send('You are not authorized to grade attempts for this course');
+    const { rows } = await pool.query(
+      'UPDATE QuizAttempt SET Score = $1 WHERE AttemptID = $2 RETURNING *',
+      [Score, attemptId]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err.stack);
+    res.status(500).send('Error grading quiz attempt');
   }
 });
 
