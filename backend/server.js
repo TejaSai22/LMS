@@ -426,6 +426,217 @@ app.patch('/api/attempts/:attemptId/grade', authorize('Instructor'), async (req,
   }
 });
 
+// --- Module Endpoints ---
+app.post('/api/courses/:courseOfferingId/modules', authorize('Instructor'), async (req, res) => {
+  try {
+    const { courseOfferingId } = req.params;
+    const { ModuleName, Description, SequenceNumber } = req.body;
+
+    if (!ModuleName || !SequenceNumber) {
+      return res.status(400).send('ModuleName and SequenceNumber are required');
+    }
+
+    const offeringResult = await pool.query('SELECT InstructorID FROM CourseOffering WHERE OfferingID = $1', [courseOfferingId]);
+    if (offeringResult.rows.length === 0) return res.status(404).send('Course offering not found');
+    if (offeringResult.rows[0].instructorid !== req.user.userId) return res.status(403).send('You are not authorized to add modules to this course');
+    const { rows } = await pool.query(
+      'INSERT INTO Module (OfferingID, ModuleName, Description, SequenceNumber) VALUES ($1, $2, $3, $4) RETURNING *',
+      [courseOfferingId, ModuleName, Description, SequenceNumber]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error(err.stack);
+    res.status(500).send('Error creating module');
+  }
+});
+
+app.get('/api/courses/:courseOfferingId/modules', authorize(), async (req, res) => {
+  try {
+    const { courseOfferingId } = req.params;
+    const offeringResult = await pool.query('SELECT InstructorID FROM CourseOffering WHERE OfferingID = $1', [courseOfferingId]);
+    if (offeringResult.rows.length === 0) return res.status(404).send('Course offering not found');
+
+    const isInstructor = offeringResult.rows[0].instructorid === req.user.userId;
+    const enrollmentResult = await pool.query('SELECT * FROM Enrollment WHERE OfferingID = $1 AND StudentID = $2', [courseOfferingId, req.user.userId]);
+    const isEnrolled = enrollmentResult.rows.length > 0;
+
+    if (!isInstructor && !isEnrolled) {
+      return res.status(403).send('You are not authorized to view modules for this course');
+    }
+
+    const { rows } = await pool.query('SELECT * FROM Module WHERE OfferingID = $1 ORDER BY SequenceNumber', [courseOfferingId]);
+    res.json(rows);
+  } catch (err) {
+    console.error(err.stack);
+    res.status(500).send('Error fetching modules');
+  }
+});
+
+app.put('/api/modules/:moduleId', authorize('Instructor'), async (req, res) => {
+  try {
+    const { moduleId } = req.params;
+    const { ModuleName, Description, SequenceNumber } = req.body;
+
+    if (!ModuleName || !SequenceNumber) {
+      return res.status(400).send('ModuleName and SequenceNumber are required');
+    }
+
+    // First, get the offering ID from the module
+    const moduleResult = await pool.query('SELECT OfferingID FROM Module WHERE ModuleID = $1', [moduleId]);
+    if (moduleResult.rows.length === 0) {
+      return res.status(404).send('Module not found');
+    }
+    const { offeringid } = moduleResult.rows[0];
+
+    // Then, verify the instructor owns the course offering
+    const offeringResult = await pool.query('SELECT InstructorID FROM CourseOffering WHERE OfferingID = $1', [offeringid]);
+    if (offeringResult.rows.length === 0) {
+       // This case should ideally not be reached if DB integrity is maintained
+      return res.status(404).send('Course offering not found');
+    }
+    if (offeringResult.rows[0].instructorid !== req.user.userId) {
+      return res.status(403).send('You are not authorized to update modules for this course');
+    }
+
+    // Update the module
+    const { rows } = await pool.query(
+      'UPDATE Module SET ModuleName = $1, Description = $2, SequenceNumber = $3 WHERE ModuleID = $4 RETURNING *',
+      [ModuleName, Description, SequenceNumber, moduleId]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err.stack);
+    res.status(500).send('Error updating module');
+  }
+});
+
+app.delete('/api/modules/:moduleId', authorize('Instructor'), async (req, res) => {
+  try {
+    const { moduleId } = req.params;
+
+    // First, get the offering ID from the module
+    const moduleResult = await pool.query('SELECT OfferingID FROM Module WHERE ModuleID = $1', [moduleId]);
+    if (moduleResult.rows.length === 0) {
+      return res.status(404).send('Module not found');
+    }
+    const { offeringid } = moduleResult.rows[0];
+
+    // Then, verify the instructor owns the course offering
+    const offeringResult = await pool.query('SELECT InstructorID FROM CourseOffering WHERE OfferingID = $1', [offeringid]);
+     if (offeringResult.rows.length === 0) {
+      return res.status(404).send('Course offering not found');
+    }
+    if (offeringResult.rows[0].instructorid !== req.user.userId) {
+      return res.status(403).send('You are not authorized to delete modules for this course');
+    }
+
+    // Delete the module
+    await pool.query('DELETE FROM Module WHERE ModuleID = $1', [moduleId]);
+    res.sendStatus(204); // No Content
+  } catch (err) {
+    console.error(err.stack);
+    res.status(500).send('Error deleting module');
+  }
+});
+
+// --- Material Endpoints ---
+
+// POST a new material to a module
+app.post('/api/modules/:moduleId/materials', authorize('Instructor'), async (req, res) => {
+  try {
+    const { moduleId } = req.params;
+    const { Title, Description, ContentType, FileURL, SequenceNumber } = req.body;
+
+    if (!Title || !ContentType || !SequenceNumber) {
+      return res.status(400).send('Title, ContentType, and SequenceNumber are required');
+    }
+
+    // Verify instructor owns the module
+    const moduleResult = await pool.query('SELECT m.OfferingID, co.InstructorID FROM Module m JOIN CourseOffering co ON m.OfferingID = co.OfferingID WHERE m.ModuleID = $1', [moduleId]);
+    if (moduleResult.rows.length === 0) return res.status(404).send('Module not found');
+    if (moduleResult.rows[0].instructorid !== req.user.userId) return res.status(403).send('You are not authorized to add materials to this module');
+
+    const { rows } = await pool.query(
+      'INSERT INTO Material (ModuleID, Title, Description, ContentType, FileURL, SequenceNumber) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [moduleId, Title, Description, ContentType, FileURL, SequenceNumber]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error(err.stack);
+    res.status(500).send('Error creating material');
+  }
+});
+
+// GET all materials for a module
+app.get('/api/modules/:moduleId/materials', authorize(), async (req, res) => {
+  try {
+    const { moduleId } = req.params;
+
+    // Verify user is enrolled or is the instructor
+    const moduleResult = await pool.query('SELECT m.OfferingID, co.InstructorID FROM Module m JOIN CourseOffering co ON m.OfferingID = co.OfferingID WHERE m.ModuleID = $1', [moduleId]);
+    if (moduleResult.rows.length === 0) return res.status(404).send('Module not found');
+
+    const { offeringid, instructorid } = moduleResult.rows[0];
+    const isInstructor = instructorid === req.user.userId;
+    const enrollmentResult = await pool.query('SELECT * FROM Enrollment WHERE OfferingID = $1 AND StudentID = $2', [offeringid, req.user.userId]);
+    const isEnrolled = enrollmentResult.rows.length > 0;
+
+    if (!isInstructor && !isEnrolled) {
+      return res.status(403).send('You are not authorized to view materials for this module');
+    }
+
+    const { rows } = await pool.query('SELECT * FROM Material WHERE ModuleID = $1 ORDER BY SequenceNumber', [moduleId]);
+    res.json(rows);
+  } catch (err) {
+    console.error(err.stack);
+    res.status(500).send('Error fetching materials');
+  }
+});
+
+// PUT (update) a specific material
+app.put('/api/materials/:materialId', authorize('Instructor'), async (req, res) => {
+  try {
+    const { materialId } = req.params;
+    const { Title, Description, ContentType, FileURL, SequenceNumber } = req.body;
+
+    if (!Title || !ContentType || !SequenceNumber) {
+      return res.status(400).send('Title, ContentType, and SequenceNumber are required');
+    }
+
+    // Verify instructor owns the material
+    const materialResult = await pool.query('SELECT m.ModuleID, mo.OfferingID, co.InstructorID FROM Material m JOIN Module mo ON m.ModuleID = mo.ModuleID JOIN CourseOffering co ON mo.OfferingID = co.OfferingID WHERE m.MaterialID = $1', [materialId]);
+    if (materialResult.rows.length === 0) return res.status(404).send('Material not found');
+    if (materialResult.rows[0].instructorid !== req.user.userId) return res.status(403).send('You are not authorized to update this material');
+
+    const { rows } = await pool.query(
+      'UPDATE Material SET Title = $1, Description = $2, ContentType = $3, FileURL = $4, SequenceNumber = $5 WHERE MaterialID = $6 RETURNING *',
+      [Title, Description, ContentType, FileURL, SequenceNumber, materialId]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err.stack);
+    res.status(500).send('Error updating material');
+  }
+});
+
+// DELETE a specific material
+app.delete('/api/materials/:materialId', authorize('Instructor'), async (req, res) => {
+  try {
+    const { materialId } = req.params;
+
+    // Verify instructor owns the material
+    const materialResult = await pool.query('SELECT m.ModuleID, mo.OfferingID, co.InstructorID FROM Material m JOIN Module mo ON m.ModuleID = mo.ModuleID JOIN CourseOffering co ON mo.OfferingID = co.OfferingID WHERE m.MaterialID = $1', [materialId]);
+    if (materialResult.rows.length === 0) return res.status(404).send('Material not found');
+    if (materialResult.rows[0].instructorid !== req.user.userId) return res.status(403).send('You are not authorized to delete this material');
+
+    await pool.query('DELETE FROM Material WHERE MaterialID = $1', [materialId]);
+    res.sendStatus(204);
+  } catch (err) {
+    console.error(err.stack);
+    res.status(500).send('Error deleting material');
+  }
+});
+
 // --- User & Auth Endpoints ---
 app.get('/api/users', authorize('Admin'), async (req, res) => {
   try {
