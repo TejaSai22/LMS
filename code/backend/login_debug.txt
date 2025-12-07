@@ -1,0 +1,2 @@
+Login Attempt: admin@lms.com, PasswordPresent: true
+User Found: 1
