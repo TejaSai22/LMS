@@ -1,10 +1,5 @@
 # INFO 5707 – Data Modeling: Learning Management System (LMS) Database
 
-**Group 18:**
-- Divyasree Pithani (Team Coordinator)
-- Teja Sai Srinivas Kunisetty
-- Keerthi Yeakambaram
-
 ## Table of Contents
 - [Summary](#summary)
 - [Introduction](#introduction)
